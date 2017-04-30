@@ -1,0 +1,227 @@
+
+- name: Update APT cache
+  apt: update_cache=yes
+
+- name: Install Phoenix dependencies from apt
+  apt: 
+    pkg:   "{{ item }}"
+    state: present
+  with_items: [ inotify-tools, postgresql, postgresql-contrib, postgresql-client, libpq-dev, python-psycopg2 ]
+
+
+
+
+- name: Get old phoenix key base if it is defined
+  shell: "cat {{ phoenix_secret_root }}/{{ phoenix_app_name }}/secret_key_base || echo ''"
+  register: old_secret_key_base
+
+- name: Get old phoenix key base if it is defined
+  shell: "cat {{ phoenix_secret_root }}/{{ phoenix_app_name }}/database_pass || echo ''"
+  register: old_database_pass
+
+
+- name: Generate phoenix app secret key base
+  set_fact:
+    phoenix_secret_key_base: "{% if old_secret_key_base.stdout == '' %}{% for i in range(1, 64) %}{{ ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','0','1','2','3','4','5','6','7','8','9']
+ | random }}{% endfor %}{% else %}{{old_secret_key_base.stdout}}{% endif %}"
+
+
+- name: Generate phoenix database password
+  set_fact:
+    phoenix_database_password: "{% if old_database_pass.stdout == '' %}{% for i in range(1, 64 + (10|random)) %}{{ ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','0','1','2','3','4','5','6','7','8','9']
+ | random }}{% endfor %}{% else %}{{old_database_pass.stdout}}{% endif %}"
+
+- name: Create secret directory for app if not present to preserve key base / database password through deployments
+  file: 
+    dest: "{{ phoenix_secret_root }}/{{ phoenix_app_name }}"
+    state: directory
+
+- name: Save phoenix key base
+  copy:
+    content: "{{ phoenix_secret_key_base }}"
+    dest: "{{ phoenix_secret_root }}/{{ phoenix_app_name }}/secret_key_base"
+    mode: 0600
+    owner: "root"
+    group: "root"
+
+
+- name: Save phoenix database password
+  copy:
+    content: "{{ phoenix_database_password }}"
+    dest: "{{ phoenix_secret_root }}/{{ phoenix_app_name }}/database_pass"
+    mode: 0600
+    owner: "root"
+    group: "root"
+
+
+- name:
+  group:
+    name: "{{ phoenix_user }}"
+    state: present
+
+- name: Create Phoenix User
+  user:
+    name:  "{{ phoenix_user }}"
+    group: "{{ phoenix_user }}"
+    home:  "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}" 
+
+- name: Create PostgreSQL User
+  postgresql_user:
+    name: "{{ phoenix_database_user }}"
+    password: "{{ phoenix_database_password }}"
+    state: present
+  become: yes
+  become_user: postgres
+
+- name: Create PostgreSQL Database
+  postgresql_db:
+    name:  "{{ phoenix_database }}"
+    owner: "{{ phoenix_database_user }}"
+  become: yes
+  become_user: postgres
+
+
+- name: Ensure that phoenix build root and temporary upload directory exists
+  file:
+    path: "{{ phoenix_build_root }}/tmp_upload_dir/"
+    state: directory
+
+- name: Remove old phoenix app build directory
+  file:
+    path: "{{ phoenix_build_root }}/{{ phoenix_app_name }}"
+    state: absent
+
+- name: Remove old phoenix temporary upload directory, if it exists
+  file:
+    path: "{{ phoenix_build_root }}/tmp_upload_dir_{{phoenix_app_name}}"
+    state: absent
+
+- name: Copy phoenix app to server
+  copy: 
+    src:   "{{ local_phoenix_app_location }}" 
+    dest:  "{{ phoenix_build_root }}/tmp_upload_dir_{{phoenix_app_name}}" 
+    force: "yes"
+    owner: "root"
+    group: "root"
+
+- name: Ensure phoenix app directory is "{{ phoenix_app_name }}"
+  shell: >
+    mv "{{ phoenix_build_root }}/tmp_upload_dir_{{phoenix_app_name}}"/* "{{ phoenix_build_root }}/{{ phoenix_app_name }}"
+
+- name: Remove phoenix temporary upload directory
+  file:
+    path: "{{ phoenix_build_root }}/tmp_upload_dir_{{phoenix_app_name}}"
+    state: absent
+
+- name: Remove old phoenix database password/secret key base  file 
+  file:
+    path: "{{ phoenix_build_root }}/{{ phoenix_app_name }}/config/prod.secret.exs" 
+    state: absent
+
+- name: Initialize phoenix database password/secret key base  file 
+  template:
+    src: prod.secret.exs.j2
+    dest: "{{ phoenix_build_root }}/{{ phoenix_app_name }}/config/prod.secret.exs" 
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Ensure priv/static directory is present within phoenix app
+  file:
+    path: "{{ phoenix_build_root }}/{{ phoenix_app_name }}/priv/static" 
+    state: directory
+
+- name: Ensure priv/repo/migrations directory is present within phoenix app
+  file:
+    path: "{{ phoenix_build_root }}/{{ phoenix_app_name }}/priv/repo/migrations" 
+    state: directory
+
+- name: Remove old node_modules directory within phoenix app, if it exists
+  file:
+    path: "{{ phoenix_build_root }}/{{ phoenix_app_name }}/node_modules" 
+    state: absent
+
+
+## NOTE: you need distillery as a dep {:distillery, "~> 1.0"} in mix.exs file to do release as below
+## this also assumes /rel directory exists with release config, that it doesn't need to be generated with "mix release.init"
+##
+## Also, make sure prod.exs has server:true set and loads port from environment: http: [port: {:system, "PORT"}],
+##
+- name: Compile phoenix app 
+  shell: >
+    cd "{{ phoenix_build_root }}/{{ phoenix_app_name }}" &&
+    npm install -g brunch &&
+    npm install -g sass-brunch &&
+    MIX_ENV=prod mix local.hex --force &&
+    MIX_ENV=prod mix local.rebar --force &&
+    MIX_ENV=prod mix deps.get --force &&
+    MIX_ENV=prod mix deps.compile &&
+    MIX_ENV=prod mix compile &&
+    npm cache clean &&
+    npm install &&
+    brunch build --production &&
+    MIX_ENV=prod mix ecto.migrate &&
+    MIX_ENV=prod mix phoenix.digest &&
+    MIX_ENV=prod mix release --env=prod
+
+- name: Test if phoenix app is already deployed and needs to be stopped
+  stat: 
+    path: "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}/bin/{{ phoenix_app_name }}"
+  register: phoenix_app_path
+
+- name: Stop existing phoenix app
+  shell: >
+    service "phoenix_{{ phoenix_app_name }}" stop ||
+    "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}/bin/{{ phoenix_app_name }}" stop || 
+    echo "0"
+  when: phoenix_app_path.stat.exists
+  become: yes
+  become_user: "{{ phoenix_user }}"
+
+- name: Ensure that phoenix deploy root directory exists
+  file:
+    path: "{{ phoenix_deploy_root }}"
+    state: directory
+
+- name: Remove old phoenix app deploy directory
+  file:
+    path: "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}"
+    state: absent
+
+
+- name: Move phoenix app to final, deployed location 
+  shell: >
+    mv "{{ phoenix_build_root }}/{{ phoenix_app_name }}/_build/prod/rel"/* "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}" && 
+    chown -R "{{ phoenix_user }}:{{ phoenix_user }}" "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}"
+
+- name: Set up service environment for Phoenix
+  become: true
+  template:
+    dest:  "/etc/default/phoenix_{{ phoenix_app_name }}"
+    src:   environment.j2
+    owner: root
+    group: root
+    mode:  0644
+
+- name: Create Systemd service for the phoenix app
+  become: true
+  template:
+    dest:  "/lib/systemd/system/phoenix_{{ phoenix_app_name }}.service"
+    src:   service.j2
+    owner: root
+    group: root
+    mode:  0644
+
+- name: Create Systemd symlink for the phoenix app
+  file: 
+    dest: "/etc/systemd/system/phoenix_{{ phoenix_app_name }}.service"
+    src: "/lib/systemd/system/phoenix_{{ phoenix_app_name }}.service"
+    state: link 
+    force: yes
+    
+
+- name: Start the Phoenix service
+  become: true
+  shell: >
+     systemctl daemon-reload &&
+     service "phoenix_{{ phoenix_app_name }}" start

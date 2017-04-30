@@ -1,0 +1,14 @@
+local_phoenix_app_location: "phoenix_example"
+phoenix_app_name:           "phoenix_example"
+phoenix_app_port:           "4000"
+
+phoenix_user:               "phoenix"
+
+phoenix_database_user:      "phoenix"
+phoenix_database:           "phoenix_example_prod"
+
+phoenix_build_root:         "/var/phoenix/build"
+phoenix_deploy_root:        "/var/phoenix/deploy"
+phoenix_secret_root:        "/var/phoneix/.secret"
+
+phoenix_env_vars: {}

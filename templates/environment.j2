@@ -1,0 +1,4 @@
+PORT="{{ phoenix_app_port }}"
+{% for key, value in phoenix_env_vars.iteritems() %}
+{{ key }}="{{ value }}"
+{% endfor %}

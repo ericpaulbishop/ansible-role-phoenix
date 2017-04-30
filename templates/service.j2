@@ -1,0 +1,15 @@
+[Unit]
+Description={{ phoenix_app_name}} Phoenix Application
+After=network.target 
+
+[Service]
+WorkingDirectory={{ phoenix_deploy_root }}/{{ phoenix_app_name }}
+EnvironmentFile=/etc/default/phoenix_{{ phoenix_app_name }}
+User={{ phoenix_user }}
+ExecStart={{ phoenix_deploy_root }}/{{ phoenix_app_name }}/bin/{{ phoenix_app_name }} start
+ExecStop={{ phoenix_deploy_root }}/{{ phoenix_app_name }}/bin/{{ phoenix_app_name }} stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
