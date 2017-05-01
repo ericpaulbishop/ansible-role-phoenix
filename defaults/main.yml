@@ -9,6 +9,6 @@ phoenix_database:           "phoenix_example_prod"
 
 phoenix_build_root:         "/var/phoenix/build"
 phoenix_deploy_root:        "/var/phoenix/deploy"
-phoenix_secret_root:        "/var/phoneix/.secret"
+phoenix_secret_root:        "/var/phoenix/.secret"
 
 phoenix_env_vars: {}

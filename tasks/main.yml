@@ -63,7 +63,6 @@
   user:
     name:  "{{ phoenix_user }}"
     group: "{{ phoenix_user }}"
-    home:  "{{ phoenix_deploy_root }}/{{ phoenix_app_name }}" 
 
 - name: Create PostgreSQL User
   postgresql_user:
@@ -219,7 +218,7 @@
     state: link 
     force: yes
 
-- name: Nginx Configure | Register Phoenix app as a service
+- name: Register Phoenix app as a service
   service:
     name: "phoenix_{{ phoenix_app_name }}"
     enabled: yes
