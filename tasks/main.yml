@@ -218,10 +218,12 @@
     src: "/lib/systemd/system/phoenix_{{ phoenix_app_name }}.service"
     state: link 
     force: yes
-    
 
-- name: Start the Phoenix service
-  become: true
-  shell: >
-     systemctl daemon-reload &&
-     service "phoenix_{{ phoenix_app_name }}" start
+- name: Nginx Configure | Register Phoenix app as a service
+  service:
+    name: "phoenix_{{ phoenix_app_name }}"
+    enabled: yes
+    state: started
+ 
+
+
