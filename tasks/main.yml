@@ -9,7 +9,14 @@
   with_items: [ inotify-tools, postgresql, postgresql-contrib, postgresql-client, libpq-dev, python-psycopg2 ]
 
 
+- name: Generate camel case app name
+  shell: >
+    echo $(echo "{{ phoenix_app_name }}" | sed 's/_/\n/'g | sed 's/.*/\u&/' ) | sed 's/[\r\n ]*//g'
+  register: camel_case_shell_output
 
+- name: Save camel case app name
+  set_fact:
+    phoenix_app_name_camel_case: "{{ camel_case_shell_output.stdout }}"
 
 - name: Get old phoenix key base if it is defined
   shell: "cat {{ phoenix_secret_root }}/{{ phoenix_app_name }}/secret_key_base || echo ''"
